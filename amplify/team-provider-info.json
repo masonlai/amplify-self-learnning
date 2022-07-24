@@ -10,6 +10,17 @@
       "StackName": "amplify-reactamplified-dev-143500",
       "StackId": "arn:aws:cloudformation:us-east-1:416290565088:stack/amplify-reactamplified-dev-143500/2a4b3190-0ab6-11ed-882b-0a4aadf3878b",
       "AmplifyAppId": "d28k5ve68gv4zx"
+    },
+    "categories": {
+      "hosting": {
+        "amplifyhosting": {
+          "appId": "d28k5ve68gv4zx",
+          "type": "cicd"
+        }
+      },
+      "auth": {
+        "reactamplified24d27982": {}
+      }
     }
   }
 }
