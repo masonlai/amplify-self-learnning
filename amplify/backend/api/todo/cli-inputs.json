@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "serviceConfiguration": {
+    "apiName": "todo",
+    "serviceName": "AppSync",
+    "gqlSchemaPath": "C:\\Users\\Mason\\homework\\amplifyLearn\\react-amplified\\amplify\\backend\\api\\todo\\schema.graphql",
+    "defaultAuthType": {
+      "mode": "AMAZON_COGNITO_USER_POOLS",
+      "cognitoUserPoolId": "authreactamplified7d590a3b"
+    },
+    "conflictResolution": {},
+    "additionalAuthTypes": []
+  }
+}
