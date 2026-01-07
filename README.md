@@ -1,70 +1,59 @@
-# Getting Started with Create React App
+這是一份專業的 PR Description 草稿，我用 **Markdown Table** 的形式幫你整理，因為這樣 Reviewer 一眼就能看懂 Input 和 Output 的關係。
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+你可以直接 Copy 落你的 PR 到：
 
-## Available Scripts
+---
 
-In the project directory, you can run:
+### ## Test Scenarios & System Behavior
 
-### `npm start`
+This section outlines the expected behavior of the E2E framework under various Loader and Regression states.
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+| Case | Scenario | Loader Exit Code | Regression Test | Final Status | Outcome / Error Details |
+| --- | --- | --- | --- | --- | --- |
+| **1** | **Happy Path**<br>
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+<br>(Loader success + Regression pass) | `0` | **Triggered** | `COMPLETED` | **`successful: true`**<br>
 
-### `npm test`
+<br>Both the loader and regression test executed without issues. |
+| **2** | **Concurrency Lock**<br>
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+<br>(Loader already running) | Non-zero | **Skipped** | `FAILED` | **`successful: false`**<br>
 
-### `npm run build`
+<br>Error message indicates the loader is already active on a specific server.<br>
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+<br>*Exception: `IllegalStateException: ... is already running on ...*` |
+| **3a** | **Loader Failure (Silent)**<br>
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+<br>(Loader fails but swallows error) | `0` | **Triggered** | `COMPLETED` | **`successful: true` (False Positive)**<br>
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+<br>The loader failed internally but returned `exit code 0`. The system incorrectly perceives this as success and proceeds with the regression test.<br>
 
-### `npm run eject`
+<br>*Note: This depends on the specific loader's design and requires further investigation.* |
+| **3b** | **Loader Failure (Explicit)**<br>
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+<br>(Loader fails with error code) | Non-zero | **Skipped** | `FAILED` | **`successful: false`**<br>
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+<br>The loader correctly reports a failure. The workflow stops immediately. |
+| **4** | **Missing Baseline**<br>
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+<br>(Loader success, no baseline file) | `0` | **Triggered** | `FAILED` | **Error during comparison**<br>
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+<br>The regression test attempts to run but crashes during the comparison phase. The error message typically cites a missing "actual" field (due to empty/missing comparison data) rather than explicitly stating "Baseline Missing". |
+| **5** | **Regression Failure**<br>
 
-## Learn More
+<br>(Loader success, Data mismatch) | `0` | **Triggered** | `COMPLETED` | **`successful: false`**<br>
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+<br>The loader ran successfully, but the regression test detected data discrepancies against the baseline. |
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+---
 
-### Code Splitting
+### 建議的補充文字 (Optional)
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+如果你覺得 Table 唔夠，或者想在 Description 裡特別 highlight **Case 3** 同 **Case 4** 的隱患，可以加多一段 "Known Limitations"：
 
-### Analyzing the Bundle Size
+**Known Limitations & Observations:**
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+* **Case 3 (Silent Failure):** We observed that some loaders return `exit code 0` even when they fail internally. In these cases, the regression test is triggered incorrectly. This requires a separate fix within the loader scripts to ensure they propagate non-zero exit codes upon failure.
+* **Case 4 (Missing Baseline):** Currently, if a baseline file is missing, the error reporting is ambiguous (referencing missing JSON fields instead of the file itself). Future improvements could include an explicit file existence check before comparison.
 
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+這樣寫 Reviewer 就會覺得你考慮得好周全，不但改了 code，還分析了系統現在的不足之處。
