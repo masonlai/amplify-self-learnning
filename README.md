@@ -1,70 +1,77 @@
-# Getting Started with Create React App
+import logging
+import os
+import azure.functions as func
+from azure.identity import DefaultAzureCredential
+from azure.keyvault.secrets import SecretClient
+import pgpy
+from pgpy.constants import PubKeyAlgorithm, KeyFlags, CompressionAlgorithm, SymmetricKeyAlgorithm
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+app = func.FunctionApp()
 
-## Available Scripts
+# 1. 定義環境變數 (Environment Variables)
+# 這些變數會由 Terraform (App Settings) 注入
+KEY_VAULT_URL = os.getenv("KEY_VAULT_URL")
+PGP_PUBLIC_KEY_SECRET_NAME = os.getenv("PGP_PUBLIC_KEY_SECRET_NAME") 
 
-In the project directory, you can run:
+@app.function_name(name="BlobEncryptFn")
+# 2. Input Trigger: 監聽 'input-clear' container
+# connection="AzureWebJobsStorage" 係指 Function App 本身既 Storage Connection String
+@app.blob_trigger(arg_name="myblob", path="input-clear/{name}", connection="AzureWebJobsStorage")
+# 3. Output Binding: 自動將 return 既野寫入 'output-encrypted' container
+# 檔案名會自動加 .pgp 後綴
+@app.blob_output(arg_name="outputblob", path="output-encrypted/{name}.pgp", connection="AzureWebJobsStorage")
+def main(myblob: func.InputStream, outputblob: func.Out[bytes]):
+    logging.info(f"Processing blob: {myblob.name}, Size: {myblob.length} bytes")
+    
+    try:
+        # --- Step A: 讀取原始檔案 (Clear Text) ---
+        original_data = myblob.read()
+        
+        # --- Step B: 拿 Public Key (由 Key Vault) ---
+        public_key_str = get_public_key_from_kv()
+        
+        # --- Step C: 加密 (PGP Encryption) ---
+        encrypted_data = encrypt_data_with_pgp(original_data, public_key_str)
+        
+        # --- Step D: 輸出 (Output) ---
+        # 將加密後既 bytes 寫入 Output Blob
+        outputblob.set(encrypted_data)
+        
+        logging.info(f"Successfully encrypted and moved to output-encrypted/{myblob.name}.pgp")
 
-### `npm start`
+    except Exception as e:
+        logging.error(f"Error during encryption process: {e}")
+        # 這裡 raise error 會讓 Blob Trigger 失敗，Azure 會自動 Retry 幾次
+        raise
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+# --- Helper Function: Get Key from Key Vault ---
+def get_public_key_from_kv():
+    if not KEY_VAULT_URL or not PGP_PUBLIC_KEY_SECRET_NAME:
+        raise ValueError("Missing Environment Variables: KEY_VAULT_URL or PGP_PUBLIC_KEY_SECRET_NAME")
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+    # 使用 Managed Identity 登入 (不需要密碼)
+    credential = DefaultAzureCredential()
+    client = SecretClient(vault_url=KEY_VAULT_URL, credential=credential)
+    
+    logging.info(f"Fetching public key secret: {PGP_PUBLIC_KEY_SECRET_NAME}")
+    secret = client.get_secret(PGP_PUBLIC_KEY_SECRET_NAME)
+    return secret.value
 
-### `npm test`
-
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
-
-### `npm run build`
-
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
-
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+# --- Helper Function: PGP Encryption Logic ---
+def encrypt_data_with_pgp(data: bytes, public_key_str: str) -> bytes:
+    # 載入 Public Key
+    pub_key, _ = pgpy.PGPKey.from_blob(public_key_str)
+    
+    # 建立 PGP Message 對象
+    message = pgpy.PGPMessage.new(data)
+    
+    # 執行加密
+    # 銀行標準通常要求 AES256 + ZLIB 壓縮
+    encrypted_message = pub_key.encrypt(
+        message, 
+        cipher=SymmetricKeyAlgorithm.AES256, 
+        compression=CompressionAlgorithm.ZLIB
+    )
+    
+    # 轉成 bytes 回傳
+    return bytes(encrypted_message)
